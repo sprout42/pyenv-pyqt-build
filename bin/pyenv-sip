@@ -1,3 +1,27 @@
 #!/bin/bash
+# Summary: Install sip for the current active python version
+#
+# Usage: pyenv sip
 
-echo "Build sip"
+set -e
+
+[ -n "$PYENV_DEBUG" ] && set -x
+
+# Provide pyenv completions
+if [ "$1" = "--complete" ]; then
+  echo system
+  # completion for versions: disabled for now
+  # exec pyenv-versions --bare
+fi
+
+version=`pyenv-version-name`
+
+if [ "$version" = "system" ]
+then
+    >&2 echo "I am not allowed to install sip system-wide."
+    >&2 echo "Please select a shell or an environment first."
+    exit 1
+fi
+
+echo "Installing sip"
+pyenv exec python --version

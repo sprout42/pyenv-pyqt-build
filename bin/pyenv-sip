@@ -2,8 +2,8 @@
 # Summary: Install sip for the current active python version
 #
 # Usage: pyenv sip
-
-set -e
+# 
+# Use pip install sip. If it fails (e.g. wrong python) install it from source
 
 [ -n "$PYENV_DEBUG" ] && set -x
 
@@ -23,5 +23,17 @@ then
     exit 1
 fi
 
-echo "Installing sip"
-pyenv exec python --version
+sip_version='4.19.1'
+
+echo "Try to install SIP with pip"
+
+pyenv-exec pip install sip 2>/dev/null
+
+if [ $? -eq 0 ]
+then
+    echo "SIP has been successfully installed"
+else
+    echo "SIP cannot be installed using pip."
+    echo "Falling back to installation from source"
+    echo "Fetch version $sip_version"
+fi

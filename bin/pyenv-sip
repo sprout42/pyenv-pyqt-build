@@ -9,8 +9,8 @@
 
 # Provide pyenv completions
 if [ "$1" = "--complete" ]; then
-  # echo system
   # completion for versions: disabled for now
+  # echo system
   # exec pyenv-versions --bare
   exit 0
 fi
@@ -25,13 +25,20 @@ version=`pyenv-version-name`
 if [ "$version" = "system" ]
 then
     >&2 echo "I am not allowed to install sip system-wide."
-    >&2 echo "Please select a shell or an environment first."
+    >&2 echo "Please select a different python version first."
     exit 1
 fi
 
+# sip file names and URL
 sip_version='4.19.1'
 # download url without the version
 sip_url=https://sourceforge.net/projects/pyqt/files/sip/sip
+# name of the sip directory
+sip_dir=sip-$sip_version
+# name of tarbal
+fname=$sip_dir.tar.gz
+# full url
+full_url=$sip_url-$sip_version/$fname
 
 # sip can be installed with pip only if python is >=3.5 and if the system is at
 # 64 bits
@@ -51,21 +58,24 @@ fi
 
 echo "SIP cannot be installed using pip."
 echo "Falling back to installation from source"
-echo "Fetch version $sip_version"
+echo "Fetching version $sip_version"
 
+# source the script with some common functionality
 source $(dirname $0)/utils.sh
 
-# name of the sip directory
-sip_dir=sip-$sip_version
-# name of tarbal
-fname=$sip_dir.tar.gz
-# full url
-full_url=$sip_url-$sip_version/$fname
 # temp file
-tmpdir=/tmp/tmp.JcLLecmqX1/  # $(mktemp -d)
+tmpdir=$(mktemp -d)
 tmpfile=$tmpdir/$fname
+
 # get the tar file
-# http $full_url $tmpfile
+http $full_url $tmpfile
+exit_code=$?
+# if it fails abort
+if [ $exit_code -gt 0 ]
+then
+    echo "Failed to retrieve SIP from $full_url" >&2
+    exit $exit_code
+fi
 
 # go into the tmp directory, untar the file ...
 pushd $tmpdir
@@ -74,19 +84,8 @@ tar -xzf $fname
 pushd $sip_dir
 
 # compile sip
-# get the prefix for the current installation: if it's a virtualenv get the
-# original prefix
-venv_prefix_cmd=$(command -v pyenv-virtualenv-prefix)
-if [ -n "$VIRTUAL_ENV" -a x"$venv_prefix_cmd" != "x" ]
-then
-    prefix=`$venv_prefix_cmd`
-else
-    prefix=$(pyenv-prefix)
-fi
 
-include=`ls -d $prefix/include/python*`
-
-python configure.py --incdir=$include
+python configure.py
 if [ $? -eq 0 ]
 then
     echo "*** SIP configured"

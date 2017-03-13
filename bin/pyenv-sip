@@ -9,14 +9,16 @@
 
 # Provide pyenv completions
 if [ "$1" = "--complete" ]; then
-  # completion for versions: disabled for now
-  # echo system
-  # exec pyenv-versions --bare
-  exit 0
+    echo -h
+    # completion for versions: disabled for now
+    # echo system
+    # exec pyenv-versions --bare
+    exit 0
 fi
 
 if [ "$1" = '-h' -o "$1" = '--help' ]
 then
+    pyenv-help sip
     exit 0
 fi
 

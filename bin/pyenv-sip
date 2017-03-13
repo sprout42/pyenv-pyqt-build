@@ -22,14 +22,11 @@ then
     exit 0
 fi
 
-# pyenv version
-version=`pyenv-version-name`
-if [ "$version" = "system" ]
-then
-    >&2 echo "I am not allowed to install sip system-wide."
-    >&2 echo "Please select a different python version first."
-    exit 1
-fi
+# source the script with some common functionality
+source $(dirname $0)/utils.sh
+
+# abort if the system python is used
+no_system_version
 
 # sip file names and URL
 sip_version='4.19.1'
@@ -61,9 +58,6 @@ fi
 echo "SIP cannot be installed using pip."
 echo "Falling back to installation from source"
 echo "Fetching version $sip_version"
-
-# source the script with some common functionality
-source $(dirname $0)/utils.sh
 
 # temp file
 tmpdir=$(mktemp -d)

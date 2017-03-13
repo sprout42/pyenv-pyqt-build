@@ -1,5 +1,16 @@
 # generic utilities
 
+no_system_version() {
+    # Abort if the pyenv version is system
+    version=`pyenv-version-name`
+    if [ "$version" = "system" ]
+    then
+        >&2 echo "I am not allowed to install sip system-wide."
+        >&2 echo "Please select a different python version first."
+        exit 1
+    fi
+}
+
 # ======================= #
 # Download the url and save it to the file.
 # borrowed from https://github.com/pyenv/pyenv and modified

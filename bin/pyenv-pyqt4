@@ -1,3 +1,61 @@
 #!/bin/bash
+# Summary: Install PyQt4 for the current active python version
+#
+# Usage: pyenv pyqt4
+# 
+# Get the pyqt4 source and build it
 
-echo "build pyqt4"
+set -e
+[ -n "$PYENV_DEBUG" ] && set -x
+
+# Provide pyenv completions
+if [ "$1" = "--complete" ]; then
+  echo -h
+  # completion for versions: disabled for now
+  # echo system
+  # exec pyenv-versions --bare
+  exit 0
+fi
+
+if [ "$1" = '-h' -o "$1" = '--help' ]
+then
+    pyenv-help pyqt4
+    exit 0
+fi
+
+# source the script with some common functionality
+source $(dirname $0)/utils.sh
+
+# abort if the system python is used
+no_system_version
+
+# sip file names and URL
+pyqt_version='4.12'
+# download url without the version
+pyqt_url=https://sourceforge.net/projects/pyqt/files/PyQt4/PyQt
+# the pyqt version number contains the platform
+uname=$(uname)
+if [ $uname = "Linux" ]
+then
+    platform=gpl_x11
+elif [ $uname = "Darwin" ]
+then
+    platform=gpl_mac
+else
+    echo "The platform $uname is not supported" >&2
+fi
+
+# name of the pyqt directory
+pyqt_dir=PyQt4_$platform-$pyqt_version
+# name of tarbal
+fname=$pyqt_dir.tar.gz
+# full url
+full_url=$pyqt_url-$pyqt_version/$fname
+
+echo "Fetching and installing version $pyqt_version"
+
+# temp file
+tmpdir=$(mktemp -d)
+
+# do the installation
+get_and_install "PyQt4" $full_url $tmpdir $fname $pyqt_dir

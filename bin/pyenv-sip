@@ -5,6 +5,7 @@
 # 
 # Use pip install sip. If it fails (e.g. wrong python) install it from source
 
+set -e
 [ -n "$PYENV_DEBUG" ] && set -x
 
 # Provide pyenv completions
@@ -57,57 +58,10 @@ fi
 
 echo "SIP cannot be installed using pip."
 echo "Falling back to installation from source"
-echo "Fetching version $sip_version"
+echo "Fetching and installing version $sip_version"
 
 # temp file
 tmpdir=$(mktemp -d)
-tmpfile=$tmpdir/$fname
 
-# get the tar file
-http $full_url $tmpfile
-exit_code=$?
-# if it fails abort
-if [ $exit_code -gt 0 ]
-then
-    echo "Failed to retrieve SIP from $full_url" >&2
-    exit $exit_code
-fi
-
-# go into the tmp directory, untar the file ...
-pushd $tmpdir
-tar -xzf $fname
-# ... and go into sip
-pushd $sip_dir
-
-# compile sip
-
-python configure.py
-if [ $? -eq 0 ]
-then
-    echo "*** SIP configured"
-    make
-    if [ $? -eq 0 ]
-    then
-        echo "*** SIP built"
-        make install
-        if [ $? -eq 0 ]
-        then
-            echo "*** SIP installed"
-            exit_code=0
-        else
-            exit_code=$?
-            echo "*** Failed to install SIP" 1>&2
-        fi
-    else
-        exit_code=$?
-        echo "*** Failed to build SIP" 1>&2
-    fi
-else
-    exit_code=$?
-    echo "*** Failed to configure SIP" 1>&2
-fi
-
-popd  # get out of sip_dir
-popd  # get out of the tmpdir
-
-exit $exit_code
+# do the installation
+get_and_install "SIP" $full_url $tmpdir $fname $sip_dir

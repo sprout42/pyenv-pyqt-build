@@ -1,3 +1,77 @@
 #!/bin/bash
+# Summary: Install PyQt5 for the current active python version
+#
+# Usage: pyenv pyqt5
+# 
+# Use pip install pyqt5. If it fails (e.g. wrong python) install it from source
 
-echo "build pyqt5"
+set -e
+[ -n "$PYENV_DEBUG" ] && set -x
+
+# Provide pyenv completions
+if [ "$1" = "--complete" ]; then
+  echo -h
+  # completion for versions: disabled for now
+  # echo system
+  # exec pyenv-versions --bare
+  exit 0
+fi
+
+if [ "$1" = '-h' -o "$1" = '--help' ]
+then
+    pyenv-help pyqt5
+    exit 0
+fi
+
+# source the script with some common functionality
+source $(dirname $0)/utils.sh
+
+# abort if the system python is used
+no_system_version
+
+# sip file names and URL
+pyqt_version='5.7.1'
+# download url without the version
+pyqt_url=https://sourceforge.net/projects/pyqt/files/PyQt5/PyQt
+# the pyqt version number contains the platform
+uname=$(uname)
+if [ $uname = "Linux" ]
+then
+    platform=gpl_x11
+elif [ $uname = "Darwin" ]
+then
+    platform=gpl_mac
+else
+    echo "The platform $uname is not supported" >&2
+fi
+
+# name of the pyqt directory
+pyqt_dir=PyQt5_$platform-$pyqt_version
+# name of tarbal
+fname=$pyqt_dir.tar.gz
+# full url
+full_url=$pyqt_url-$pyqt_version/$fname
+
+# PyQt5 can be installed with pip only if python is >=3.4 and if the system is
+# at 64 bits
+is_greater_34=`python -c 'import sys; print(sys.version_info >= (3, 4))'`
+version=`uname -m`
+
+if [ $is_greater_34 = "True" -a $version = "x86_64" ]
+then
+    echo "Try to install PyQt5 with pip"
+    pyenv-exec pip install pyqt5 2>/dev/null
+    if [ $? -eq 0 ]
+    then
+        echo "PyQt5 has been successfully installed"
+        exit 0
+    fi
+fi
+
+echo "Fetching and installing version $pyqt_version"
+
+# temp file
+tmpdir=$(mktemp -d)
+
+# do the installation
+get_and_install "PyQt5" $full_url $tmpdir $fname $pyqt_dir

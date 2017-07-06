@@ -30,23 +30,13 @@ source $(dirname $0)/utils.sh
 no_system_version
 
 # sip file names and URL
-pyqt_version='5.7.1'
+pyqt_version='5.8.2'
 # download url without the version
 pyqt_url=https://sourceforge.net/projects/pyqt/files/PyQt5/PyQt
 # the pyqt version number contains the platform
-uname=$(uname)
-if [ $uname = "Linux" ]
-then
-    platform=gpl_x11
-elif [ $uname = "Darwin" ]
-then
-    platform=gpl_mac
-else
-    echo "The platform $uname is not supported" >&2
-fi
 
 # name of the pyqt directory
-pyqt_dir=PyQt5_$platform-$pyqt_version
+pyqt_dir=PyQt5_gpl-$pyqt_version
 # name of tarbal
 fname=$pyqt_dir.tar.gz
 # full url
@@ -54,7 +44,7 @@ full_url=$pyqt_url-$pyqt_version/$fname
 
 # PyQt5 can be installed with pip only if python is >=3.4 and if the system is
 # at 64 bits
-is_greater_34=`python -c 'import sys; print(sys.version_info >= (3, 4))'`
+is_greater_34=`python -c 'import sys; print(sys.version_info >= (3, 5))'`
 version=`uname -m`
 
 if [ $is_greater_34 = "True" -a $version = "x86_64" ]

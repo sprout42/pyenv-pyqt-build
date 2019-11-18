@@ -34,8 +34,8 @@ pyqt_version='5.5.1'
 # download url without the version
 #https://cytranet.dl.sourceforge.net/project/pyqt/PyQt5/PyQt-5.5.1/PyQt-gpl-5.5.1.tar.gz
 
-#pyqt_url=https://sourceforge.net/projects/pyqt/files/PyQt5/PyQt
-pyqt_url=https://cytranet.dl.sourceforge.net/project/pyqt/PyQt5/PyQt
+pyqt_url=https://sourceforge.net/projects/pyqt/files/PyQt5/PyQt
+#pyqt_url=https://cytranet.dl.sourceforge.net/project/pyqt/PyQt5/PyQt
 
 # the pyqt version number contains the platform
 

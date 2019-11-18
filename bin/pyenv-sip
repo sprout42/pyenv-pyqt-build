@@ -30,7 +30,7 @@ source $(dirname $0)/utils.sh
 no_system_version
 
 # sip file names and URL
-sip_version='4.19.1'
+sip_version='4.18.1'
 # download url without the version
 sip_url=https://sourceforge.net/projects/pyqt/files/sip/sip
 # name of the sip directory

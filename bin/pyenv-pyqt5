@@ -30,13 +30,18 @@ source $(dirname $0)/utils.sh
 no_system_version
 
 # sip file names and URL
-pyqt_version='5.8.2'
+pyqt_version='5.5.1'
 # download url without the version
-pyqt_url=https://sourceforge.net/projects/pyqt/files/PyQt5/PyQt
+#https://cytranet.dl.sourceforge.net/project/pyqt/PyQt5/PyQt-5.5.1/PyQt-gpl-5.5.1.tar.gz
+
+#pyqt_url=https://sourceforge.net/projects/pyqt/files/PyQt5/PyQt
+pyqt_url=https://cytranet.dl.sourceforge.net/project/pyqt/PyQt5/PyQt
+
 # the pyqt version number contains the platform
 
 # name of the pyqt directory
-pyqt_dir=PyQt5_gpl-$pyqt_version
+#pyqt_dir=PyQt5_gpl-$pyqt_version
+pyqt_dir=PyQt-gpl-$pyqt_version
 # name of tarbal
 fname=$pyqt_dir.tar.gz
 # full url
@@ -65,3 +70,5 @@ tmpdir=$(mktemp -d)
 
 # do the installation
 get_and_install "PyQt5" $full_url $tmpdir $fname $pyqt_dir
+#get_and_install "PyQt5" "https://cytranet.dl.sourceforge.net/project/pyqt/PyQt5/PyQt-5.5.1/PyQt-gpl-5.5.1.tar.gz" $tmpdir $fname $pyqt_dir
+

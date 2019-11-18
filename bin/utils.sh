@@ -131,7 +131,8 @@ function configure() {
     set +e
     pushd $path
     echo "*** Configuring $name"
-    python configure.py
+    #python configure.py
+    python configure.py --qmake=/usr/local/opt/qt@5.5/bin/qmake
     error_code=$?
     popd
     set -e

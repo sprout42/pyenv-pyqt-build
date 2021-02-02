@@ -1,67 +1,189 @@
 #!/bin/bash
 # Summary: Install sip for the current active python version
 #
-# Usage: pyenv sip
+# Usage: pyenv sip install <version>
+#        pyenv sip uninstall
+#        pyenv sip versions
+#        pyenv sip update
+#        pyenv sip show
 # 
-# Use pip install sip. If it fails (e.g. wrong python) install it from source
+# Install, check, or uninstall SIP for the current pyenv version
 
 set -e
 [ -n "$PYENV_DEBUG" ] && set -x
 
-# Provide pyenv completions
-if [ "$1" = "--complete" ]; then
-    echo -h
-    # completion for versions: disabled for now
-    # echo system
-    # exec pyenv-versions --bare
-    exit 0
-fi
-
-if [ "$1" = '-h' -o "$1" = '--help' ]
-then
-    pyenv-help sip
-    exit 0
-fi
+# dup STDOUT to FD 3 so any function that needs to print to STDOUT and return 
+# values can use FD 3 for the output channel
+exec 3<&1
 
 # source the script with some common functionality
 source $(dirname $0)/utils.sh
 
+sw_name=sip
+
+update_versions() {
+    cat <(update_src_versions "${sw_name}") \
+        <(update_pip_versions "${sw_name}") \
+        <(update_hg_versions "${sw_name}" "${sip_hg_repo}") | sort -uV
+}
+
+print_versions() {
+    cat <(print_src_versions "${sw_name}") \
+        <(print_pip_versions "${sw_name}") \
+        <(print_hg_versions "${sw_name}" "${sip_hg_repo}") | sort -uV
+}
+
+# Provide pyenv completions
+if [ "$1" = "--complete" ]; then
+    if [ $# -ge 2 ] && [ "$2" == "install" ]; then
+        versions=( $(print_versions) )
+        for ver in "${versions[@]}"; do
+            echo ${ver}
+        done
+        echo latest
+    else
+        echo install
+        echo uninstall
+        echo versions
+        echo update
+        echo show
+    fi
+    exit 0
+fi
+
 # abort if the system python is used
 no_system_version
+utils_avail
 
-# sip file names and URL
-sip_version='4.18.1'
-# download url without the version
-sip_url=https://sourceforge.net/projects/pyqt/files/sip/sip
-# name of the sip directory
-sip_dir=sip-$sip_version
-# name of tarbal
-fname=$sip_dir.tar.gz
-# full url
-full_url=$sip_url-$sip_version/$fname
+usage() {
+    pyenv-help sip 2>/dev/null
+    [ -z "$1" ] || exit "$1"
+}
 
-# sip can be installed with pip only if python is >=3.5 and if the system is at
-# 64 bits
-is_greater_35=`python -c 'import sys; print(sys.version_info >= (3, 5))'`
-version=`uname -m`
+sip_hg_repo="https://www.riverbankcomputing.com/hg/sip"
+unset sw_version
 
-if [ $is_greater_35 = "True" -a $version = "x86_64" ]
-then
-    echo "Try to install SIP with pip"
-    pyenv-exec pip install sip 2>/dev/null
-    if [ $? -eq 0 ]
-    then
-        echo "SIP has been successfully installed"
+# Process CLI parameters
+while [ $# -gt 0 ]; do
+    arg="$1"
+
+    case "$arg" in
+    "-h" | "--help" )
+        usage 0
+        ;;
+    "update" )
+        update_versions
+
+        # Add "latest" which will be the last version and "default" which means 
+        # match the current installed QT version.
+        echo "latest"
+        echo "default"
         exit 0
+        ;;
+    "versions" )
+        # Print the possible versions that can be installed
+        print_versions
+
+        # Add "latest" which will be the last version and "default" which means 
+        # match the current installed QT version.
+        echo "latest"
+        echo "default"
+        exit 0
+        ;;
+    "show" )
+        # Print the version installed as well as the SIP version returned by the 
+        # python API
+        sw_version=$(get_installed_version "${sw_name}")
+        echo "${sw_name} ${sw_version} installed"
+        sip_py_ver=$(get_current_sip_version)
+        echo "sip API version: ${sw_version}"
+        exit 0
+        ;;
+    "uninstall" )
+        uninstall "${sw_name}"
+        exit 0
+        ;;
+    "install" )
+        # set "default" as the default version to install, this may get 
+        # overridden later
+        sw_version="default"
+        ;;
+    * )
+        # If sw_version is set to "default" then this must be the version number 
+        # to install
+        if [ "${sw_version}" == "default" ]; then
+            sw_version="$arg"
+        else
+            usage 1 >&2
+        fi
+        ;;
+    esac
+
+    shift # Keep processing args
+done
+
+_all_vers=( $(print_versions) )
+_pip_vers=( $(print_pip_versions "${sw_name}") )
+_src_vers=( $(print_src_versions "${sw_name}") )
+_hg_vers=( $(print_hg_versions "${sw_name}" "${sip_hg_repo}") )
+
+# Confirm that the version supplied is either a valid version or "latest"
+if [[ ! "${_all_vers[*]} latest" =~ "${sw_version}" ]]; then
+    echo "Invalid ${sw_name} version ${sw_version}" >&2
+    exit 1
+elif [ "${sw_version}" == "latest" ]; then
+    sw_version="${_all_vers[-1]}"
+fi
+
+# If this is a pip version try installing through pip (if allowed)
+if [[ "${_pip_vers[*]} latest" =~ "${sw_version}" ]]; then
+    # sip can be installed with pip only if python is >=3.5 and if the system is 
+    # at 64 bits
+    is_greater_35=$(python -c 'import sys; print(sys.version_info >= (3, 5))')
+    version=$(uname -m)
+    if [ $is_greater_35 = "True" ] && [ $version = "x86_64" ]; then
+        echo "Installing ${sw_name} ${sw_version} with pip"
+        pyenv-exec pip install "sip==${sw_version}" 2>/dev/null
+        if [ $? -eq 0 ]; then
+            echo "${sw_name} has been successfully installed"
+        fi
+        exit 0
+    else
+        echo "Using ${sw_name} ${sw_version} sdist from pypi"
+        src_dir=$(get_source_from_sdist "${sw_name}" "${sw_version}")
+        compile "${sw_name}" "${sw_version}" "${src_dir}"
     fi
 fi
 
-echo "SIP cannot be installed using pip."
-echo "Falling back to installation from source"
-echo "Fetching and installing version $sip_version"
+# Confirm that the version is something that can be installed from a source 
+# release
+if [[ "${_src_vers[*]} latest" =~ "${sw_version}" ]]; then
+    echo "*** Downloading ${sw_name} ${sw_version}"
+    src_dir=$(get_source "${sw_name}" "${sw_version}")
+    compile "${sw_name}" "${sw_version}" "${src_dir}"
+    exit 0
+fi
 
-# temp file
-tmpdir=$(mktemp -d)
+# Last option - try building from mercurial
+if [[ "${_hg_vers[*]} latest" =~ "${sw_version}" ]]; then
+    if [[ ${sw_version} == 5.* ]]; then
+        # If the version to install is >= 5.x then python >=3.5 is required
+        is_greater_35=$(python -c 'import sys; print(sys.version_info >= (3, 5))')
+        if [ "$is_greater_35" != "True" ]; then
+            echo "Cannot install ${sw_name} ${sw_version}, python version 3.5+ required" >&2
+            exit 1
+        fi
+    fi
 
-# do the installation
-get_and_install "SIP" $full_url $tmpdir $fname $sip_dir
+    src_dir=$(get_src_dir "${sw_name}")
+
+    echo "*** Building ${sw_name} ${sw_version} from mercurial source"
+    hg clone "${sip_hg_repo}" -r "${sw_version}" "${src_dir}/sip-hg-${sw_version}"
+    compile "${sw_name}" "${sw_version}" "${src_dir}/sip-hg-${sw_version}"
+    exit 0
+fi
+
+# If we have reached here then the version selected can't be installed from 
+# source, and wasn't able to be pip installed, so throw an error
+echo "Unable to identify method to install ${sw_name} ${sw_version}" >&2
+exit 1

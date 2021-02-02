@@ -1,74 +1,219 @@
 #!/bin/bash
-# Summary: Install PyQt5 for the current active python version
+# Summary: Install pyqt5 for the current active python version
 #
-# Usage: pyenv pyqt5
-# 
-# Use pip install pyqt5. If it fails (e.g. wrong python) install it from source
+# Usage: pyenv pyqt5 install [<version>] [--qmake="path/to/qmake"] [--confirm-license]
+#        pyenv pyqt5 uninstall
+#        pyenv pyqt5 versions
+#        pyenv pyqt5 update
+#        pyenv pyqt5 show
+#
+# Install, check, or uninstall PyQt5 for the current pyenv version.
+# If the `qmake` executable is not in the default path or discoverable through 
+# `brew` it must be specified during install.
 
 set -e
 [ -n "$PYENV_DEBUG" ] && set -x
 
-# Provide pyenv completions
-if [ "$1" = "--complete" ]; then
-  echo -h
-  # completion for versions: disabled for now
-  # echo system
-  # exec pyenv-versions --bare
-  exit 0
-fi
-
-if [ "$1" = '-h' -o "$1" = '--help' ]
-then
-    pyenv-help pyqt5
-    exit 0
-fi
+# dup STDOUT to FD 3 so any function that needs to print to STDOUT and return 
+# values can use FD 3 for the output channel
+exec 3<&1
 
 # source the script with some common functionality
 source $(dirname $0)/utils.sh
 
+sw_name=PyQt5
+
+update_versions() {
+    cat <(update_src_versions "${sw_name}") \
+        <(update_pip_versions "${sw_name}") | sort -uV
+}
+
+print_versions() {
+    cat <(print_src_versions "${sw_name}") \
+        <(print_pip_versions "${sw_name}") | sort -uV
+}
+
+# Provide pyenv completions
+if [ "$1" == "--complete" ]; then
+    if [ $# -ge 2 ] && [ "$2" == "install" ]; then
+        # First add the extra configuration flags
+        echo --qmake
+        echo --confirm-license
+        versions=( $(print_versions) )
+        for ver in "${versions[@]}"; do
+            echo ${ver}
+        done
+        echo latest
+        echo default
+    else
+        echo install
+        echo uninstall
+        echo versions
+        echo update
+        echo show
+    fi
+    exit 0
+fi
+
 # abort if the system python is used
 no_system_version
+utils_avail
 
-# sip file names and URL
-pyqt_version='5.5.1'
-# download url without the version
-#https://cytranet.dl.sourceforge.net/project/pyqt/PyQt5/PyQt-5.5.1/PyQt-gpl-5.5.1.tar.gz
+usage() {
+    pyenv-help pyqt5 2>/dev/null
+    [ -z "$1" ] || exit "$1"
+}
 
-pyqt_url=https://sourceforge.net/projects/pyqt/files/PyQt5/PyQt
-#pyqt_url=https://cytranet.dl.sourceforge.net/project/pyqt/PyQt5/PyQt
+# Attempt to auto-find a qmake executable
+set +e
+qmake_path=$(which qmake)
+if [ $? -ne 0 ]; then
+    # Check if brew exists, if it does and QT is installed use `brew` to find 
+    # the qmake path.
+    brew_path=$(which brew)
+    if [ $? -eq 0 ]; then
+        qmake_path="$("${brew_path}" --prefix qt)/bin/qmake"
+    fi
+fi
+set -e
 
-# the pyqt version number contains the platform
+# Process CLI parameters
+while [ $# -gt 0 ]; do
+    arg="$1"
 
-# name of the pyqt directory
-#pyqt_dir=PyQt5_gpl-$pyqt_version
-pyqt_dir=PyQt-gpl-$pyqt_version
-# name of tarbal
-fname=$pyqt_dir.tar.gz
-# full url
-full_url=$pyqt_url-$pyqt_version/$fname
+    case "$arg" in
+    "-h" | "--help" )
+        usage 0
+        ;;
+    "update" )
+        update_versions
 
-# PyQt5 can be installed with pip only if python is >=3.4 and if the system is
-# at 64 bits
-is_greater_34=`python -c 'import sys; print(sys.version_info >= (3, 5))'`
-version=`uname -m`
-
-if [ $is_greater_34 = "True" -a $version = "x86_64" ]
-then
-    echo "Try to install PyQt5 with pip"
-    pyenv-exec pip install pyqt5 2>/dev/null
-    if [ $? -eq 0 ]
-    then
-        echo "PyQt5 has been successfully installed"
+        # Add "latest" which will be the last version and "default" which means 
+        # match the current installed QT version.
+        echo "latest"
+        echo "default"
         exit 0
+        ;;
+    "versions" )
+        # Print the possible versions that can be installed
+        print_versions
+
+        # Add "latest" which will be the last version and "default" which means 
+        # match the current installed QT version.
+        echo "latest"
+        echo "default"
+        exit 0
+        ;;
+    "show" )
+        sw_version=$(get_installed_version "${sw_name}")
+        # Print the installed package version and the SIP package version
+        echo "${sw_name} ${sw_version} installed"
+        pyenv-sip show
+        exit 0
+        ;;
+    "uninstall" )
+        uninstall "${sw_name}"
+        exit 0
+        ;;
+    "install" )
+        # set "default" as the default version to install, this may get 
+        # overridden later
+        sw_version="default"
+        ;;
+    "--qmake" )
+        if [ $# -ge 2 ]; then
+            # The next argument is the qmake path
+            qmake_path="$2"
+            shift # extra shift for the qmake path we consumed
+        else
+            usage 1 >&2
+        fi
+        ;;
+    "--confirm-license" )
+        pyqt_configure_args="--confirm-license"
+        ;;
+    * )
+        # If sw_version is set to "default" then this must be the version number 
+        # to install
+        if [ "${sw_version}" == "default" ]; then
+            sw_version="$arg"
+        else
+            usage 1 >&2
+        fi
+        ;;
+    esac
+
+    shift # Keep processing args
+done
+
+if [ -z "${qmake_path}" ]; then
+    echo "Unable to determine installed QT version, use the --qmake argument" >&2
+    exit 1
+fi
+
+
+qt_version=$("${qmake_path}" -query | sed -n 's/QT_VERSION://p')
+# The installed QT (qmake -query) and selected PyQT version to install must 
+# match
+if [ "${qt_version}" != "${sw_version}" ]; then
+    echo "Unable to install ${sw_name} ${sw_version}, QT version is ${qt_version}" >&2
+    echo "Use --qmake option to specify path to correct qmake executable for ${sw_name} ${sw_version}" >&2
+    exit 1
+fi
+
+# Add the qmake_path to the pyqt configure args
+pyqt_configure_args="${pyqt_configure_args} --qmake=${qmake_path}"
+
+_all_vers=( $(print_versions) )
+_pip_vers=( $(print_pip_versions "${sw_name}") )
+_src_vers=( $(print_src_versions "${sw_name}") )
+
+# Confirm that the version supplied is either a valid version or "latest"
+if [[ ! "${_all_vers[*]} latest default" =~ "${sw_version}" ]]; then
+    echo "Invalid ${sw_name} version ${sw_version}" >&2
+    exit 1
+fi
+
+if [ "${sw_version}" == "default" ]; then
+    sw_version="${_all_vers[-1]}"
+else
+    # Confirm that the qmake version specified 
+    if [ "${sw_version}" == "latest" ]; then
+        sw_version="${_all_vers[-1]}"
     fi
 fi
 
-echo "Fetching and installing version $pyqt_version"
+# If this is a pip version try installing through pip (if allowed)
+if [[ "${_pip_vers[*]} latest" =~ "${sw_version}" ]]; then
+    # pyqt5 can be installed with pip only if python is >=3.5 and if the system 
+    # is at 64 bits
+    is_greater_35=$(python -c 'import sys; print(sys.version_info >= (3, 5))')
+    version=$(uname -m)
+    if [ $is_greater_35 = "True" ] && [ $version = "x86_64" ]; then
+        echo "Installing ${sw_name} ${sw_version} with pip"
+        pyenv-exec pip install "pyqt5==${sw_version}" 2>/dev/null
+        if [ $? -eq 0 ]; then
+            echo "${sw_name} has been successfully installed"
+        fi
+        exit 0
+    else
+        echo "Using ${sw_name} ${sw_version} sdist from pypi"
+        src_dir=$(get_source_from_sdist "${sw_name}" "${sw_version}")
+        check_sip_version "${sw_name}" "${sw_version}" "${src_dir}"
+        compile "${sw_name}" "${sw_version}" "${src_dir}" "${pyqt_configure_args}"
+    fi
+fi
 
-# temp file
-tmpdir=$(mktemp -d)
+# Confirm that the version is something that can be installed from a source 
+# release
+if [[ "${_src_vers[*]} latest" =~ "${sw_version}" ]]; then
+    src_dir=$(get_source "${sw_name}" "${sw_version}")
+    check_sip_version "${sw_name}" "${sw_version}" "${src_dir}"
+    compile "${sw_name}" "${sw_version}" "${src_dir}" "${pyqt_configure_args}"
+    exit 0
+fi
 
-# do the installation
-get_and_install "PyQt5" $full_url $tmpdir $fname $pyqt_dir
-#get_and_install "PyQt5" "https://cytranet.dl.sourceforge.net/project/pyqt/PyQt5/PyQt-5.5.1/PyQt-gpl-5.5.1.tar.gz" $tmpdir $fname $pyqt_dir
-
+# If we have reached here then the version selected can't be installed from 
+# source, and wasn't able to be pip installed, so throw an error
+echo "Unable to identify method to install ${sw_name} ${sw_version}" >&2
+exit 1

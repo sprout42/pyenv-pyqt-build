@@ -58,10 +58,11 @@ utils_avail() {
 # * update_versions
 process_pyqt_build_cli() {
     # Process CLI parameters
+    _DO_INSTALL=0
     while [ $# -gt 0 ]; do
         arg="$1"
 
-    case "$arg" in
+        case "$arg" in
         "-h" | "--help" )
             usage 0
             ;;
@@ -89,20 +90,25 @@ process_pyqt_build_cli() {
             exit 0
             ;;
         "show" )
+            # Installed PyQt* version
             if [ "${sw_name}" != "sip" ]; then
                 sw_version=$(get_installed_version "${sw_name}")
                 echo "${sw_name} ${sw_version} installed"
-                sip_version=$(get_installed_version sip)
-                echo "sip ${sip_version} installed"
+            fi
+
+            # Installed SIP version
+            sip_version=$(get_installed_version sip)
+            echo "sip ${sip_version} installed"
+
+            if [ "${sw_name}" != "sip" ]; then
+                # PyQt* & SIP API versions
                 print_api_versions "${sw_name}"
             else
-                # Print the SIP versions without using the PyQt* python 
-                # interface
-                sip_version=$(get_installed_version "sip")
-                echo "sip ${sip_version} installed"
+                # SIP API version
                 sip_py_ver=$(get_current_sip_version)
                 echo "sip API version: ${sip_py_ver}"
             fi
+
             exit 0
             ;;
         "uninstall" )
@@ -112,6 +118,7 @@ process_pyqt_build_cli() {
         "install" )
             # set "default" as the default version to install, this may get 
             # overridden later
+            _DO_INSTALL=1
             sw_version="default"
             ;;
         * )
@@ -135,10 +142,16 @@ process_pyqt_build_cli() {
                 config_args="${config_args} ${arg}"
             fi
             ;;
-    esac
+        esac
 
     shift # Keep processing args
     done
+
+    # Only the install command is not handled in the previous loop, if we have 
+    # reached this far ensure that the "install" subcommand was provided
+    if [ $_DO_INSTALL -eq 0 ]; then
+        usage 1 >&2
+    fi
 
     # Export the arguments required to run the command
     export sw_version="${sw_version}"
@@ -596,18 +609,36 @@ uninstall() {
     install_list="$(get_pyqt_dir)/.${sw_name}_installed_files"
     version_file="$(get_pyqt_dir)/.${sw_name}_installed_version"
 
-    if [ ! -f "${install_list}" ] && [ ! -f "${version_file}" ]; then
+    # PyQt packages will show up in pip regardless of how they are installed, if 
+    # one shows up in pip but there is no version file it means it was probably 
+    # installed through pip and still counts as installed.
+    if [ "${sw_name}" != "sip" ]; then
+        set +e
+        pip_version=$(python -m pip --no-python-version-warning show "${sw_name}" | sed -n 's/^Version: //p')
+        set -e
+    fi
+
+    if [ ! -z "${pip_version}" ]; then
+        echo "*** Uninstalling ${sw_name} ${pip_version}"
+    elif [ -f "${install_list}" ] && [ -f "${version_file}" ]; then
+        sw_version=$(cat "${version_file}")
+        echo "*** Uninstalling ${sw_name} ${sw_version}"
+    elif [ -f "${install_list}" ] || [ -f "${version_file}" ]; then
+        echo "*** Uninstalling incomplete ${sw_name} install"
+    else
         echo "No ${sw_name} version installed" >&2
         exit 1
     fi
 
-    if [ -f "${version_file}" ]; then
-        sw_version=$(cat "${version_file}")
-        echo "*** Uninstalling ${sw_name} ${sw_version}"
-    else
-        echo "*** Uninstalling incomplete ${sw_name} install"
+    # First attempt uninstalling through pip
+    if [ ! -z "${pip_version}" ]; then
+        set +e
+        python -m pip --no-python-version-warning uninstall -y "${sw_name}" 
+        set -e
     fi
 
+    # Even if pip uninstall just happened, double check that all of the 
+    # installed files are cleaned up if a list of installed files exists.
     if [ -f "${install_list}" ]; then
         installed_files=( $(cat "${install_list}") )
         for file in "${installed_files[@]}"; do
@@ -636,10 +667,21 @@ uninstall() {
 # * sw_name (string): user friendly name of the package to install
 get_installed_version() {
     sw_name=$1
-    version_file="$(get_pyqt_dir)/.${sw_name}_installed_version"
 
+    # PyQt packages will show up in pip regardless of how they are installed, if 
+    # one shows up in pip but there is no version file it means it was probably 
+    # installed through pip and still counts as valid.
+    if [ "${sw_name}" != "sip" ]; then
+        set +e
+        pip_version=$(python -m pip --no-python-version-warning show "${sw_name}" | sed -n 's/^Version: //p')
+        set -e
+    fi
+
+    version_file="$(get_pyqt_dir)/.${sw_name}_installed_version"
     if [ -f "${version_file}" ]; then
         cat "${version_file}"
+    elif [ ! -z "${pip_version}" ]; then
+        echo "${pip_version}"
     else
         echo "No ${sw_name} version installed" >&2
         exit 1
@@ -854,7 +896,7 @@ pip_install() {
     arch=$(uname -m)
     if [ $is_greater_35 = "True" ] && [ $arch = "x86_64" ]; then
         echo "*** Installing ${sw_name} ${sw_version} with pip"
-        pyenv-exec pip install "sip==${sw_version}" 2>/dev/null
+        python -m pip --no-python-version-warning install "sip==${sw_version}" 2>/dev/null
         echo "*** ${sw_name} has been installed"
     else
         echo "*** Using ${sw_name} ${sw_version} sdist from pypi"

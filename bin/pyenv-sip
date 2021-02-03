@@ -20,6 +20,7 @@ exec 3<&1
 source $(dirname $0)/utils.sh
 
 sw_name=sip
+sip_hg_repo="https://www.riverbankcomputing.com/hg/sip"
 
 update_versions() {
     cat <(update_src_versions "${sw_name}") \
@@ -60,67 +61,25 @@ usage() {
     [ -z "$1" ] || exit "$1"
 }
 
-sip_hg_repo="https://www.riverbankcomputing.com/hg/sip"
+# Process the arguments, this should will set the following variables that allow 
+# us to process the appropriate action:
+# * sw_version
+# * config_args
+#
+# This function requires the following variables to be set:
+# * sw_name
+# * config_args
+#       any required configuration options can be set before calling this 
+#       function and be maintained
+# * qmake_path (used only for PyQT* modules)
+#
+# This function requires the following functions to be defined:
+# * usage
+# * print_versions
+# * update_versions
 unset sw_version
-
-# Process CLI parameters
-while [ $# -gt 0 ]; do
-    arg="$1"
-
-    case "$arg" in
-    "-h" | "--help" )
-        usage 0
-        ;;
-    "update" )
-        update_versions
-
-        # Add "latest" which will be the last version and "default" which means 
-        # match the current installed QT version.
-        echo "latest"
-        echo "default"
-        exit 0
-        ;;
-    "versions" )
-        # Print the possible versions that can be installed
-        print_versions
-
-        # Add "latest" which will be the last version and "default" which means 
-        # match the current installed QT version.
-        echo "latest"
-        echo "default"
-        exit 0
-        ;;
-    "show" )
-        # Print the version installed as well as the SIP version returned by the 
-        # python API
-        sw_version=$(get_installed_version "${sw_name}")
-        echo "${sw_name} ${sw_version} installed"
-        sip_py_ver=$(get_current_sip_version)
-        echo "sip API version: ${sw_version}"
-        exit 0
-        ;;
-    "uninstall" )
-        uninstall "${sw_name}"
-        exit 0
-        ;;
-    "install" )
-        # set "default" as the default version to install, this may get 
-        # overridden later
-        sw_version="default"
-        ;;
-    * )
-        # If sw_version is set to "default" then this must be the version number 
-        # to install
-        if [ "${sw_version}" == "default" ]; then
-            sw_version="$arg"
-        else
-            usage 1 >&2
-        fi
-        ;;
-    esac
-
-    shift # Keep processing args
-done
+unset config_args
+process_pyqt_build_cli $@
 
 _all_vers=( $(print_versions) )
 _pip_vers=( $(print_pip_versions "${sw_name}") )
@@ -135,55 +94,40 @@ elif [ "${sw_version}" == "latest" ]; then
     sw_version="${_all_vers[-1]}"
 fi
 
-# If this is a pip version try installing through pip (if allowed)
-if [[ "${_pip_vers[*]} latest" =~ "${sw_version}" ]]; then
-    # sip can be installed with pip only if python is >=3.5 and if the system is 
-    # at 64 bits
+# Lastly SIP version 5+ can't be installed if the python version is < 3.5
+compare_versions "5.0.0" "${sw_version}"
+# $? < 2 means 0 (equal) or 1 (target version is > 5.0.0)
+if [ $? -lt 2 ]; then
+    # If the version to install is >= 5.x then python >=3.5 is required
     is_greater_35=$(python -c 'import sys; print(sys.version_info >= (3, 5))')
-    version=$(uname -m)
-    if [ $is_greater_35 = "True" ] && [ $version = "x86_64" ]; then
-        echo "Installing ${sw_name} ${sw_version} with pip"
-        pyenv-exec pip install "sip==${sw_version}" 2>/dev/null
-        if [ $? -eq 0 ]; then
-            echo "${sw_name} has been successfully installed"
-        fi
-        exit 0
-    else
-        echo "Using ${sw_name} ${sw_version} sdist from pypi"
-        src_dir=$(get_source_from_sdist "${sw_name}" "${sw_version}")
-        compile "${sw_name}" "${sw_version}" "${src_dir}"
+    if [ "$is_greater_35" != "True" ]; then
+        echo "Cannot install ${sw_name} ${sw_version}, python version 3.5+ required" >&2
+        exit 1
     fi
+fi
+
+# If this is a pip version try installing through pip
+if [[ "${_pip_vers[*]} latest" =~ "${sw_version}" ]]; then
+    pip_install "${sw_name}" "${sw_version}" "${config_args}"
+    exit 0
 fi
 
 # Confirm that the version is something that can be installed from a source 
 # release
 if [[ "${_src_vers[*]} latest" =~ "${sw_version}" ]]; then
-    echo "*** Downloading ${sw_name} ${sw_version}"
-    src_dir=$(get_source "${sw_name}" "${sw_version}")
-    compile "${sw_name}" "${sw_version}" "${src_dir}"
+    src_install "${sw_name}" "${sw_version}" "${config_args}"
     exit 0
 fi
 
 # Last option - try building from mercurial
 if [[ "${_hg_vers[*]} latest" =~ "${sw_version}" ]]; then
-    if [[ ${sw_version} == 5.* ]]; then
-        # If the version to install is >= 5.x then python >=3.5 is required
-        is_greater_35=$(python -c 'import sys; print(sys.version_info >= (3, 5))')
-        if [ "$is_greater_35" != "True" ]; then
-            echo "Cannot install ${sw_name} ${sw_version}, python version 3.5+ required" >&2
-            exit 1
-        fi
-    fi
-
-    src_dir=$(get_src_dir "${sw_name}")
-
-    echo "*** Building ${sw_name} ${sw_version} from mercurial source"
-    hg clone "${sip_hg_repo}" -r "${sw_version}" "${src_dir}/sip-hg-${sw_version}"
-    compile "${sw_name}" "${sw_version}" "${src_dir}/sip-hg-${sw_version}"
+    hg_install "${sw_name}" "${sw_version}" "${config_args}"
     exit 0
 fi
 
-# If we have reached here then the version selected can't be installed from 
-# source, and wasn't able to be pip installed, so throw an error
+# If we have reached here then the version selected can't be installed from pip, 
+# from source, or from mercurial, so throw an error
+#
+# This shouldn't be reachable if the script logic is correct, but just in case.
 echo "Unable to identify method to install ${sw_name} ${sw_version}" >&2
 exit 1

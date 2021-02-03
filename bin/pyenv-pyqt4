@@ -7,7 +7,7 @@
 #        pyenv pyqt4 update
 #        pyenv pyqt4 show
 #
-# Install, check, or uninstall PyQt5 for the current pyenv version.
+# Install, check, or uninstall PyQt4 for the current pyenv version.
 # If the `qmake` executable is not in the default path or discoverable through 
 # `brew` it must be specified during install.
 
@@ -32,11 +32,10 @@ print_versions() {
 }
 
 # Provide pyenv completions
-if [ "$1" = "--complete" ]; then
+if [ "$1" == "--complete" ]; then
     if [ $# -ge 2 ] && [ "$2" == "install" ]; then
-        # First add the extra configuration flags
+        # First add the explicitly supported install/config flags
         echo --qmake
-        echo --confirm-license
         versions=( $(print_versions) )
         for ver in "${versions[@]}"; do
             echo ${ver}
@@ -62,118 +61,75 @@ usage() {
     [ -z "$1" ] || exit "$1"
 }
 
-unset sw_version
-unset qmake_path
-
 # Attempt to auto-find a qmake executable
+set +e
 qmake_path=$(which qmake)
 if [ $? -ne 0 ]; then
     # Check if brew exists, if it does and QT is installed use `brew` to find 
     # the qmake path.
     brew_path=$(which brew)
+    # This is unlikely to succeed since homebrew doesn't have a QT4 target
+    # anymore, but it's worth trying in case someone has added a custom recipe.
     if [ $? -eq 0 ]; then
-        qmake_path="$("${brew_path}" --prefix qt)/bin/qmake"
+        qmake_path=$(realpath "$("${brew_path}" --prefix qt@4)/bin/qmake" 2> /dev/null)
     fi
 fi
+set -e
 
-# Process CLI parameters
-while [ $# -gt 0 ]; do
-    arg="$1"
-
-    case "$arg" in
-    "-h" | "--help" )
-        usage 0
-        ;;
-    "update" )
-        update_versions
-
-        # Add "latest" which will be the last version and "default" which means 
-        # match the current installed QT version.
-        echo "latest"
-        echo "default"
-        exit 0
-        ;;
-    "versions" )
-        # Print the possible versions that can be installed
-        print_versions
-
-        # Add "latest" which will be the last version and "default" which means 
-        # match the current installed QT version.
-        echo "latest"
-        echo "default"
-        exit 0
-        ;;
-    "show" )
-        sw_version=$(get_installed_version "${sw_name}")
-        # Print the installed package version and the SIP package version
-        echo "${sw_name} ${sw_version} installed"
-        pyenv-sip show
-        exit 0
-        ;;
-    "uninstall" )
-        uninstall "${sw_name}"
-        exit 0
-        ;;
-    "install" )
-        # set "default" as the default version to install, this may get 
-        # overridden later
-        sw_version="default"
-        ;;
-    "--qmake" )
-        if [ $# -ge 2 ]; then
-            # The next argument is the qmake path
-            qmake_path="$2"
-            shift # extra shift for the qmake path we consumed
-        else
-            usage 1 >&2
-        fi
-        ;;
-    "--confirm-license" )
-        pyqt_configure_args="--confirm-license"
-        ;;
-    * )
-        # If sw_version is set to "default" then this must be the version number 
-        # to install
-        if [ "${sw_version}" == "default" ]; then
-            sw_version="$arg"
-        else
-            usage 1 >&2
-        fi
-        ;;
-    esac
-
-    shift # Keep processing args
-done
-
-if [ -z "${qmake_path}" ]; then
-    echo "Unable to determine installed QT version, use the --qmake argument" >&2
-    exit 1
-fi
-
-qt_version=$("${qmake_path}" -query | sed -n 's/QT_VERSION://p')
-# The installed QT (qmake -query) and selected PyQT version to install must 
-# match
-if [ "${qt_version}" != "${sw_version}" ]; then
-    echo "Unable to install ${sw_name} ${sw_version}, QT version is ${qt_version}" >&2
-    echo "Use --qmake option to specify path to correct qmake executable for ${sw_name} ${sw_version}" >&2
-    exit 1
-fi
-
-# Add the qmake_path to the pyqt configure args
-pyqt_configure_args="${pyqt_configure_args} --qmake=${qmake_path}"
+# Process the arguments, this should will set the following variables that allow 
+# us to process the appropriate action:
+# * sw_version
+# * config_args
+#
+# This function requires the following variables to be set:
+# * sw_name
+# * config_args
+#       any required configuration options can be set before calling this 
+#       function and be maintained
+# * qmake_path (used only for PyQT* modules)
+#
+# This function requires the following functions to be defined:
+# * usage
+# * print_versions
+# * update_versions
+unset sw_version
+config_args="--confirm-license"
+process_pyqt_build_cli $@
+check_qt_version
 
 _all_vers=( $(print_versions) )
+_src_vers=( $(print_src_versions "${sw_name}") )
 
-# Confirm that the version supplied is either a valid version or "latest"
-if [[ ! "${_all_vers[*]} latest" =~ "${sw_version}" ]]; then
+# Confirm that the version supplied is either valid, "latest", or "default"
+if [[ ! "${_all_vers[*]} latest default" =~ "${sw_version}" ]]; then
     echo "Invalid ${sw_name} version ${sw_version}" >&2
     exit 1
-elif [ "${sw_version}" == "latest" ]; then
-    sw_version="${_all_vers[-1]}"
 fi
 
-# Only option for pyqt4 is a source install, so try it
-src_dir=$(get_source "${sw_name}" "${sw_version}")
-check_sip_version "${sw_name}" "${sw_version}" "${src_dir}"
-compile "${sw_name}" "${sw_version}" "${src_dir}" "${pyqt_configure_args}"
-exit 0
+case "${sw_version}" in
+"default" )
+    # Use the QT version set by check_qt_version()
+    sw_version="${qt_version}"
+    ;;
+"latest" )
+    # Use the last version in the list
+    sw_version="${_all_vers[-1]}"
+    ;;
+esac
+
+# Add the qmake_path to the pyqt configure args
+config_args="${config_args} --qmake=${qmake_path}"
+
+# Confirm that the version is something that can be installed from a source 
+# release
+if [[ "${_src_vers[*]} latest" =~ "${sw_version}" ]]; then
+    src_install "${sw_name}" "${sw_version}" "${config_args}"
+    exit 0
+fi
+
+# If we have reached here then the version selected can't be installed from 
+# source, so throw an error.
+#
+# This shouldn't be reachable if the script logic is correct, but just in case.
+echo "Unable to identify method to install ${sw_name} ${sw_version}" >&2
+exit 1
